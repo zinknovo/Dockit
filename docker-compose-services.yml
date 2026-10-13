@@ -70,6 +70,10 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      ARK_API_KEY: ${ARK_API_KEY}
+      ARK_BASE_URL: ${ARK_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      ARK_EMBEDDING_TPS: ${ARK_EMBEDDING_TPS:-1000}
     ports:
       - "8083:8083"
 

@@ -52,33 +52,36 @@ spring:
     models:
       default: deepseek-v4-flash-vision-exp
       # 模型注册表：code -> (provider, name, 端点, 实际模型名)。加模型只加配置，无需改代码。
+      # chat 三条目当前全部指向智谱 GLM OpenAI 兼容端点（与 application.yml 保持一致）
       list:
         deepseek-v4-pro:
           provider: openai-compatible
-          name: DeepSeek V4 Pro
+          name: GLM 5.3
           api-key: ${OPENAI_API_KEY}
-          base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
-          api-model-name: deepseek-v4-pro
+          base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+          api-model-name: glm-5.3
           enabled: true
         deepseek-v4-flash-vision-exp:
           provider: openai-compatible
-          name: DeepSeek V4 Flash Vision Exp
+          name: GLM 5.3 FlashX（默认）
           api-key: ${OPENAI_API_KEY}
-          base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
-          api-model-name: deepseek-v4-flash-vision-exp
+          base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+          api-model-name: glm-5.3-flashx
           enabled: true
         ark-code-latest:
           provider: openai-compatible
-          name: 火山方舟代码模型
+          name: GLM 5.3 Flash
           api-key: ${ARK_API_KEY}
-          base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/plan/v3}
-          api-model-name: ark-code-latest
+          base-url: ${ARK_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+          api-model-name: glm-5.3-flash
           enabled: true
-    # 向量化 embedding（OpenAI 兼容端点，当前为火山方舟 doubao-embedding-vision）
+    # 向量化 embedding（OpenAI 兼容端点，当前为智谱 embedding-3，2048 维；
+    # 换 embedding 模型必须删 Qdrant collection dockit-docs 重建，旧维度向量不能混用）
     embedding:
       api-key: ${ARK_API_KEY}
-      base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/plan/v3}
-      model: doubao-embedding-vision
+      base-url: ${ARK_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      model: embedding-3
+      tokens-per-second: ${ARK_EMBEDDING_TPS:1000}
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
       rerank:

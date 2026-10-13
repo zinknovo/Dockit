@@ -4,6 +4,7 @@ import com.javaee.aiservice.aiops.MonitoringService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -12,6 +13,9 @@ import java.util.*;
  * 知识库：文档切分 → 向量化 → 存入 Qdrant。
  * 向量、原文内容、元数据、分段映射全部落在 Qdrant 点的 payload 中（命中即取），
  * 不再依赖 Redis 存储知识库数据。
+ * <p>
+ * BM25 关键词通道由内存倒排索引（{@link InvertedIndex}）承载：写入/删除时同步增删，
+ * 首次查询前从 Qdrant 一次性装载存量分段，替代此前"每次查询全量滚动打分"的实现。
  */
 @Component
 public class KnowledgeBase {
@@ -28,13 +32,34 @@ public class KnowledgeBase {
 
     private final MonitoringService monitoringService;
 
+    private final InvertedIndex invertedIndex;
+
+    private final RecallFusion.Mode fusionMode;
+
+    /** BM25 索引是否已完成首次装载（Qdrant 存量分段 → 内存倒排） */
+    private volatile boolean bm25IndexLoaded = false;
+
     @Autowired
-    public KnowledgeBase(DocumentVectorizer vectorizer, VectorStore vectorStore, Reranker reranker, DocumentSegmenter documentSegmenter, MonitoringService monitoringService) {
+    public KnowledgeBase(DocumentVectorizer vectorizer, VectorStore vectorStore, Reranker reranker,
+                         DocumentSegmenter documentSegmenter, MonitoringService monitoringService,
+                         InvertedIndex invertedIndex,
+                         @Value("${ai.rag.fusion-mode:RRF}") String fusionMode) {
         this.vectorizer = vectorizer;
         this.vectorStore = vectorStore;
         this.reranker = reranker;
         this.documentSegmenter = documentSegmenter;
         this.monitoringService = monitoringService;
+        this.invertedIndex = invertedIndex;
+        this.fusionMode = parseFusionMode(fusionMode);
+    }
+
+    private static RecallFusion.Mode parseFusionMode(String fusionMode) {
+        try {
+            return RecallFusion.Mode.valueOf(fusionMode.trim().toUpperCase(Locale.ROOT));
+        } catch (Exception e) {
+            log.warn("未知融合模式 {}，回退 UNION", fusionMode);
+            return RecallFusion.Mode.UNION;
+        }
     }
 
     public void addDocument(String documentId, String content, Map<String, Object> metadata) {
@@ -60,6 +85,8 @@ public class KnowledgeBase {
                 docMetadata.put("content", content);
                 float[] vector = vectorizer.vectorize(content);
                 vectorStore.store(documentId, vector, docMetadata);
+                // 整篇文档点不进 BM25 通道（与旧扫描实现一致：关键词通道只覆盖分段点）；
+                // 该分支也无 storedIds 记录，若在此索引、索引失败将残留 Qdrant 孤儿点
                 return;
             }
 
@@ -83,6 +110,7 @@ public class KnowledgeBase {
 
                 vectorStore.store(segmentId, vectors[i], segmentMetadata);
                 storedIds.add(segmentId);
+                indexKeywordChannel(segmentId, segment.getContent(), segmentMetadata);
             }
 
             // 不建文档级点：分段点 payload 已携带完整文档元数据（documentId/strategy/userId 等），
@@ -91,6 +119,7 @@ public class KnowledgeBase {
         } catch (Exception e) {
             // 回滚已写入的分段点，避免失败后残留孤儿向量
             for (String storedId : storedIds) {
+                invertedIndex.remove(storedId);
                 try {
                     vectorStore.delete(storedId);
                 } catch (Exception cleanup) {
@@ -116,9 +145,11 @@ public class KnowledgeBase {
         try {
             List<String> segmentIds = getSegmentIds(documentId);
             for (String segmentId : segmentIds) {
+                invertedIndex.remove(segmentId);
                 vectorStore.delete(segmentId);
             }
             vectorStore.delete(documentId);
+            invertedIndex.remove(documentId);
             log.info("文档移除成功: documentId={}, 删除了{}个分段", documentId, segmentIds.size());
         } catch (Exception e) {
             log.error("移除文档失败", e);
@@ -221,16 +252,7 @@ public class KnowledgeBase {
             monitoringService.recordTimer("rag.vector-search", System.currentTimeMillis() - t1);
 
             // payload 已带 content；兜底：缺失时按 id 从 Qdrant 补取
-            for (Map<String, Object> result : results) {
-                if (!result.containsKey("content") || result.get("content") == null) {
-                    String id = (String) result.get("id");
-                    String content = getSegmentContent(id);
-                    if (content == null) {
-                        content = getDocumentContent(id);
-                    }
-                    result.put("content", content);
-                }
-            }
+            backfillContent(results);
 
             return results;
         } catch (Exception e) {
@@ -257,32 +279,10 @@ public class KnowledgeBase {
 
             List<Map<String, Object>> bm25Results = bm25Search(query, topK * 3, filters);
 
-            Set<String> seenIds = new HashSet<>();
-            List<Map<String, Object>> combinedResults = new ArrayList<>();
+            List<Map<String, Object>> combinedResults = RecallFusion.fuse(vectorResults, bm25Results, topK, fusionMode);
+            backfillContent(combinedResults);
 
-            for (Map<String, Object> result : vectorResults) {
-                String id = (String) result.get("id");
-                if (!seenIds.contains(id)) {
-                    seenIds.add(id);
-                    if (!result.containsKey("content")) {
-                        result.put("content", getSegmentContent(id));
-                    }
-                    result.put("source", "vector");
-                    combinedResults.add(result);
-                }
-            }
-
-            for (Map<String, Object> result : bm25Results) {
-                String id = (String) result.get("id");
-                if (!seenIds.contains(id)) {
-                    seenIds.add(id);
-                    result.put("content", getSegmentContent(id));
-                    result.put("source", "bm25");
-                    combinedResults.add(result);
-                }
-            }
-
-            return combinedResults.subList(0, Math.min(topK, combinedResults.size()));
+            return combinedResults;
 
         } catch (Exception e) {
             log.error("混合检索失败", e);
@@ -328,72 +328,37 @@ public class KnowledgeBase {
     }
 
     /**
-     * BM25 关键词检索：从 Qdrant 全量滚动 payload 文本计算（量级在万级点内可接受）
+     * BM25 关键词检索：内存倒排索引打分（真实 DF/IDF）。
+     * 首次调用前从 Qdrant 一次性装载存量分段，此后写入/删除随 {@link #addDocumentWithSegment}
+     * 与 {@link #removeDocument} 同步维护。
      */
     private List<Map<String, Object>> bm25Search(String query, int topK, Map<String, Object> filters) {
-        List<Map<String, Object>> results = new ArrayList<>();
-
-        for (Map<String, Object> payload : vectorStore.scrollAll()) {
-            String id = (String) payload.get("rawId");
-            if (id == null || !"segment".equals(payload.get("type"))) {
-                continue;
-            }
-            if (!matchesFilters(payload, filters)) {
-                continue;
-            }
-            String content = payload.get("content") == null ? "" : payload.get("content").toString();
-            if (content.isEmpty()) {
-                continue;
-            }
-            float score = computeBM25(query, content);
-            if (score > 0) {
-                results.add(Map.of(
-                        "id", id,
-                        "similarity", score
-                ));
-            }
-        }
-
-        results.sort((a, b) -> Float.compare(
-                ((Number) b.get("similarity")).floatValue(),
-                ((Number) a.get("similarity")).floatValue()
-        ));
-
-        return results.subList(0, Math.min(topK, results.size()));
+        ensureBm25IndexLoaded();
+        return invertedIndex.search(query, topK, filters);
     }
 
-    private float computeBM25(String query, String document) {
-        if (query == null || document == null) {
-            return 0.0f;
+    private void ensureBm25IndexLoaded() {
+        if (bm25IndexLoaded) {
+            return;
         }
-
-        String[] queryTerms = query.toLowerCase().split("\\s+");
-        String[] docTerms = document.toLowerCase().split("\\s+");
-
-        int docLength = docTerms.length;
-        if (docLength == 0) {
-            return 0.0f;
-        }
-
-        float score = 0.0f;
-        for (String term : queryTerms) {
-            if (term.isEmpty()) continue;
-
-            int termFreq = 0;
-            for (String docTerm : docTerms) {
-                if (docTerm.contains(term) || term.contains(docTerm)) {
-                    termFreq++;
-                }
+        synchronized (this) {
+            if (bm25IndexLoaded) {
+                return;
             }
-
-            if (termFreq > 0) {
-                float tf = (float) termFreq / docLength;
-                float bm25 = (float) (tf * (2.2 + 1) / (tf + 2.2));
-                score += bm25;
-            }
+            // 先置位再装载：Qdrant 不可用时 scrollAll 返回空列表，避免每次查询重试全量扫描
+            bm25IndexLoaded = true;
+            invertedIndex.loadFrom(vectorStore.scrollAll());
+            log.info("BM25 倒排索引装载完成: {} 个分段/文档", invertedIndex.size());
         }
+    }
 
-        return score / queryTerms.length;
+    /**
+     * 同步内存倒排索引（忽略 content 自身，其余元数据保留供过滤）
+     */
+    private void indexKeywordChannel(String id, String content, Map<String, Object> metadata) {
+        Map<String, Object> filterable = new HashMap<>(metadata);
+        filterable.remove("content");
+        invertedIndex.index(id, content, filterable);
     }
 
     public List<String> getAllDocumentIds(String userId, String knowledgeBaseId) {
@@ -409,7 +374,7 @@ public class KnowledgeBase {
     private List<String> distinctDocumentIds(Map<String, Object> filters) {
         Set<String> ids = new LinkedHashSet<>();
         for (Map<String, Object> payload : vectorStore.scrollAll()) {
-            if (!matchesFilters(payload, filters)) {
+            if (!PayloadFilters.matches(payload, filters)) {
                 continue;
             }
             if ("segment".equals(payload.get("type"))) {
@@ -437,7 +402,7 @@ public class KnowledgeBase {
 
         long segmentCount = all.stream()
                 .filter(p -> "segment".equals(p.get("type")))
-                .filter(p -> matchesFilters(p, filters))
+                .filter(p -> PayloadFilters.matches(p, filters))
                 .count();
 
         stats.put("documentCount", distinctDocumentIds(filters).size());
@@ -455,27 +420,30 @@ public class KnowledgeBase {
         return stats;
     }
 
+    /**
+     * 命中结果补 content：向量通道 payload 已带 content；BM25 独有候选或缺失时
+     * 按 id 从 Qdrant 补取（分段点 → 整篇文档点兜底），仍缺失则不写键，
+     * 避免下游把显式 null 当作内容拼进提示词。
+     */
+    private void backfillContent(List<Map<String, Object>> results) {
+        for (Map<String, Object> result : results) {
+            if (result.get("content") == null) {
+                String id = (String) result.get("id");
+                String content = getSegmentContent(id);
+                if (content == null) {
+                    content = getDocumentContent(id);
+                }
+                if (content != null) {
+                    result.put("content", content);
+                }
+            }
+        }
+    }
+
     private Map<String, Object> normalizeMetadata(Map<String, Object> metadata) {
         Map<String, Object> normalized = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
         normalized.putIfAbsent("userId", "system");
         normalized.putIfAbsent("knowledgeBaseId", "default");
         return normalized;
-    }
-
-    private boolean matchesFilters(Map<String, Object> metadata, Map<String, Object> filters) {
-        if (filters == null || filters.isEmpty()) {
-            return true;
-        }
-        for (Map.Entry<String, Object> filter : filters.entrySet()) {
-            Object expected = filter.getValue();
-            if (expected == null || expected.toString().isBlank()) {
-                continue;
-            }
-            Object actual = metadata.get(filter.getKey());
-            if (actual == null || !expected.toString().equals(actual.toString())) {
-                return false;
-            }
-        }
-        return true;
     }
 }

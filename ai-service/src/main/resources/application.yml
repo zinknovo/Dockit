@@ -65,8 +65,9 @@ spring:
       api-key: ${ARK_API_KEY}
       base-url: ${ARK_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
       model: embedding-3
-      # token 速率上限（/秒）：GLM 限流档位未实测，先留 1000/s 安全线，可按实测调高
-      tokens-per-second: ${ARK_EMBEDDING_TPS:1000}
+      # token 速率上限（/秒）：2026-10-14 实测 GLM embedding-3（本账户）：串行 12 连发全 200
+      # （等效 10.3k tok/s）、8 并发 24 连发全 200；取 8000 留安全余量。换账户/厂商需重测
+      tokens-per-second: ${ARK_EMBEDDING_TPS:8000}
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
       rerank:

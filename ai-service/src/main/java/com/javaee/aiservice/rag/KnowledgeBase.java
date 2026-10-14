@@ -268,6 +268,7 @@ public class KnowledgeBase {
                                                    Map<String, Object> filters) {
         log.info("混合检索: query={}, topK={}, strategy={}", query, topK, strategyType);
 
+        long start = System.currentTimeMillis();
         try {
             long t0 = System.currentTimeMillis();
             float[] queryVector = vectorizer.vectorize(query);
@@ -287,6 +288,9 @@ public class KnowledgeBase {
         } catch (Exception e) {
             log.error("混合检索失败", e);
             throw new RuntimeException("混合检索失败: " + e.getMessage(), e);
+        } finally {
+            // 此前仅在纯向量检索路径记录 rag.search，混合路径缺失（旧报告发现 D4）
+            monitoringService.recordTimer("rag.search", System.currentTimeMillis() - start);
         }
     }
 
@@ -334,7 +338,10 @@ public class KnowledgeBase {
      */
     private List<Map<String, Object>> bm25Search(String query, int topK, Map<String, Object> filters) {
         ensureBm25IndexLoaded();
-        return invertedIndex.search(query, topK, filters);
+        long t0 = System.currentTimeMillis();
+        List<Map<String, Object>> results = invertedIndex.search(query, topK, filters);
+        monitoringService.recordTimer("rag.bm25", System.currentTimeMillis() - t0);
+        return results;
     }
 
     private void ensureBm25IndexLoaded() {

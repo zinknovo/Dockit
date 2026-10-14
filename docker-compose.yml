@@ -184,7 +184,7 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
       ARK_API_KEY: ${ARK_API_KEY}
       ARK_BASE_URL: ${ARK_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
-      ARK_EMBEDDING_TPS: ${ARK_EMBEDDING_TPS:-1000}
+      ARK_EMBEDDING_TPS: ${ARK_EMBEDDING_TPS:-8000}
       QDRANT_URL: http://qdrant:6333
     ports:
       - "8083:8083"

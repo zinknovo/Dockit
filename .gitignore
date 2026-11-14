@@ -39,3 +39,7 @@ build/
 
 # Temporary complog reference backend (delete after porting)
 _ref/
+
+### Local interview prep notes (not committed) ###
+INTERVIEW-NOTES.md
+PROJECT-MANUAL.md

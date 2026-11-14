@@ -19,6 +19,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+          # setup-java v6 起 problem matcher 需显式开启，删掉这行编译告警就不再显示为 PR 标注
           problem-matcher: true
 
       # 单测均为 mock，无基础设施依赖；*ApplicationTests / AllModelsTest 需真实

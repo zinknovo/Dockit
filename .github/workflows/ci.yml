@@ -19,6 +19,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+          problem-matcher: true
 
       # 单测均为 mock，无基础设施依赖；*ApplicationTests / AllModelsTest 需真实
       # MySQL/Redis/Qdrant/API Key（Spring 上下文启动），CI 不提供，予以排除。

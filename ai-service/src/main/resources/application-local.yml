@@ -50,39 +50,39 @@ spring:
 
   ai:
     models:
-      default: deepseek-v4-flash-vision-exp
+      default-model: glm-5.3-flashx
       # 模型注册表：code -> (provider, name, 端点, 实际模型名)。加模型只加配置，无需改代码。
       # chat 三条目当前全部指向智谱 GLM OpenAI 兼容端点（与 application.yml 保持一致）
       list:
-        deepseek-v4-pro:
+        "[glm-5.3]":
           provider: openai-compatible
           name: GLM 5.3
           api-key: ${OPENAI_API_KEY}
           base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
           api-model-name: glm-5.3
           enabled: true
-        deepseek-v4-flash-vision-exp:
+        "[glm-5.3-flashx]":
           provider: openai-compatible
           name: GLM 5.3 FlashX（默认）
           api-key: ${OPENAI_API_KEY}
           base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
           api-model-name: glm-5.3-flashx
           enabled: true
-        ark-code-latest:
+        "[glm-5.3-flash]":
           provider: openai-compatible
           name: GLM 5.3 Flash
-          api-key: ${ARK_API_KEY}
-          base-url: ${ARK_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+          api-key: ${OPENAI_API_KEY}
+          base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
           api-model-name: glm-5.3-flash
           enabled: true
     # 向量化 embedding（OpenAI 兼容端点，当前为智谱 embedding-3，2048 维；
     # 换 embedding 模型必须删 Qdrant collection dockit-docs 重建，旧维度向量不能混用）
     embedding:
-      api-key: ${ARK_API_KEY}
-      base-url: ${ARK_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      api-key: ${OPENAI_API_KEY}
+      base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
       model: embedding-3
       # token 速率上限（/秒）：2026-10-14 实测 GLM embedding-3（本账户）10k+ tok/s 无 429，取 8000 留余量
-      tokens-per-second: ${ARK_EMBEDDING_TPS:8000}
+      tokens-per-second: ${EMBEDDING_TPS:8000}
     dashscope:
       api-key: ${DASHSCOPE_API_KEY}
       rerank:

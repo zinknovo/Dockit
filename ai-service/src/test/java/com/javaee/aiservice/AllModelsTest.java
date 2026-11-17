@@ -4,6 +4,8 @@ import com.javaee.aiservice.agent.ChatProvider;
 import com.javaee.aiservice.agent.ChatService;
 import com.javaee.aiservice.factory.AIServiceFactory;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.slf4j.Logger;
@@ -38,6 +40,7 @@ public class AllModelsTest {
 
         // 获取所有可用模型（配置注册表）
         Map<String, ChatProvider> services = aiServiceFactory.getAllServices();
+        assertFalse(services.isEmpty(), "注册表为空：spring.ai.models 没有绑定进来");
 
         for (Map.Entry<String, ChatProvider> entry : services.entrySet()) {
             String code = entry.getKey();

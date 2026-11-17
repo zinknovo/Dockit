@@ -14,8 +14,8 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "spring.ai.models")
 public class MultiModelConfig {
 
-    /** 默认模型 code */
-    private String defaultModel = "deepseek-v4-flash-vision-exp";
+    /** 默认模型 code，只来自 spring.ai.models.default-model，代码里不另写一份 */
+    private String defaultModel;
 
     /** 模型注册表：code -> 模型配置 */
     private Map<String, ModelConfig> list = new HashMap<>();

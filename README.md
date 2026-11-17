@@ -42,7 +42,7 @@
 
 ```bash
 cp .env.example .env
-# 编辑 .env：填入 OPENAI_API_KEY / ARK_API_KEY / DASHSCOPE_API_KEY 等外部模型密钥
+# 编辑 .env：填入 OPENAI_API_KEY（智谱 GLM）/ DASHSCOPE_API_KEY 等外部模型密钥
 ```
 
 ### 2. 一键启动（基础设施 + 微服务）

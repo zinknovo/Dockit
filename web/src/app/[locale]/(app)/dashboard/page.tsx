@@ -165,10 +165,13 @@ export default function ToolkitPage() {
   }
 
   // ====== 知识库 ======
+  // 后端用 @RequestBody String 收原文；不声明 text/plain 的话，http 拦截器会先 JSON.stringify，引号和 \n 转义会被原样存进去
+  const plainText = { 'Content-Type': 'text/plain;charset=UTF-8' }
+
   const kgQA = async () => {
     if (!kgQuestion.trim()) return
     setLoading(true); setResult(null)
-    try { setResult(await http.post<ToolResult>({ url: '/api/rag/query', data: kgQuestion })) }
+    try { setResult(await http.post<ToolResult>({ url: '/api/ai/rag/query', data: kgQuestion, headers: plainText })) }
     catch (err) { setResult({ error: err instanceof Error ? err.message : '请求失败' }) }
     finally { setLoading(false) }
   }
@@ -176,7 +179,7 @@ export default function ToolkitPage() {
   const kgSearch = async () => {
     if (!kgQuery.trim()) return
     setLoading(true); setResult(null)
-    try { setResult(await http.get<ToolResult>({ url: '/api/rag/search', params: { query: kgQuery, topK: 5 } })) }
+    try { setResult(await http.get<ToolResult>({ url: '/api/ai/rag/search', params: { query: kgQuery, topK: 5 } })) }
     catch (err) { setResult({ error: err instanceof Error ? err.message : '请求失败' }) }
     finally { setLoading(false) }
   }
@@ -184,7 +187,7 @@ export default function ToolkitPage() {
   const kgIndex = async () => {
     if (!kgDocId.trim() || !kgContent.trim()) return
     setLoading(true); setMsg('')
-    try { await http.post({ url: `/api/rag/index?documentId=${kgDocId}`, data: kgContent }); setMsg('索引成功') }
+    try { await http.post({ url: '/api/ai/rag/index', params: { documentId: kgDocId }, data: kgContent, headers: plainText }); setMsg('索引成功') }
     catch (err) { setMsg('索引失败: ' + (err instanceof Error ? err.message : '未知错误')) }
     finally { setLoading(false) }
   }

@@ -297,6 +297,10 @@ button:disabled {
   word-break: break-word;
 }
 
+.text-pre-wrap {
+  white-space: pre-wrap;
+}
+
 /* ==================== App Spacing Utilities ==================== */
 .space-y-1 > :not([hidden]) ~ :not([hidden]) {
   margin-top: 0.25rem;

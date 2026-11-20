@@ -10,7 +10,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <>
       <div
-        className={`position-fixed top-0 start-0 end-0 bottom-0 z-40 bg-black-30 transition ${open ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`position-fixed top-0 start-0 end-0 bottom-0 z-40 bg-black-30 transition ${open ? 'opacity-100' : 'pe-none opacity-0'}`}
         onClick={onClose}
       />
       <aside
